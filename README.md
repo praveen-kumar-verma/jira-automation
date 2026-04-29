@@ -31,7 +31,10 @@ JIRA_PROJECT_KEY=PROJ
 ```
 
 ## Run
-
+1. Install PocketBase
+2. Download PocketBase for Windows.
+3. Extract the zip.
+4. Place pocketbase.exe in the project root folder (same level as pb_hooks, pb_migrations, scripts).
 ```powershell
 
 powershell -ExecutionPolicy Bypass -File .\scripts\start-pocketbase.ps1
