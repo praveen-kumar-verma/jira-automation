@@ -9,11 +9,6 @@ When a `tasks` record is created, PocketBase creates one Jira issue. When `prior
 - `pb_hooks/jira.pb.js`
   - `onRecordAfterCreateSuccess`: creates a Jira issue after a `tasks` record is persisted.
   - `onRecordAfterUpdateSuccess`: syncs priority changes to the same Jira issue.
-- `pb_migrations/1714350000_create_tasks_collection.pb.js`
-  - Creates the `tasks` collection for fresh installs.
-- `pb_migrations/1714351000_update_tasks_dropdowns_and_remove_followups.pb.js`
-  - Converts `priority` and `task_type` to dropdown fields.
-  - Removes old `link_type` and `jira_followup_key` fields.
 - `scripts/start-pocketbase.ps1`
   - Loads `.env` into process environment variables and starts PocketBase locally.
 
