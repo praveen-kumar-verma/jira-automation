@@ -1,7 +1,8 @@
 param(
   [string]$PocketBasePath = ".\pocketbase.exe",
   [string]$EnvPath = ".\.env",
-  [string]$ServeAddress = "127.0.0.1:8090"
+  [string]$ServeAddress = "127.0.0.1:8090",
+  [string]$PublicDir = ".\frontend"
 )
 
 if (-not (Test-Path -LiteralPath $PocketBasePath)) {
@@ -22,4 +23,4 @@ if (Test-Path -LiteralPath $EnvPath) {
   }
 }
 
-& $PocketBasePath serve --http $ServeAddress
+& $PocketBasePath serve --http $ServeAddress --publicDir $PublicDir

@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PocketBase Jira Task Sync</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f9;
+        --surface: #ffffff;
+        --surface-muted: #eef3f8;
+        --text: #1f2937;
+        --muted: #5f6b7a;
+        --line: #d9e0e8;
+        --accent: #146c94;
+        --accent-dark: #0f516f;
+        --danger: #b42318;
+        --success: #16803c;
+        --warning: #9a6700;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      header {
+        background: #243447;
+        color: #ffffff;
+        padding: 18px 24px;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.2;
+      }
+
+      header p {
+        margin: 6px 0 0;
+        color: #d8e0ea;
+        font-size: 14px;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+        gap: 20px;
+        padding: 20px;
+      }
+
+      section,
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      section {
+        padding: 18px;
+      }
+
+      h2 {
+        margin: 0 0 14px;
+        font-size: 17px;
+      }
+
+      label {
+        display: block;
+        margin: 12px 0 6px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #ffffff;
+        color: var(--text);
+        font: inherit;
+        padding: 10px 11px;
+      }
+
+      textarea {
+        min-height: 96px;
+        resize: vertical;
+      }
+
+      button {
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #ffffff;
+        cursor: pointer;
+        font-weight: 700;
+        min-height: 40px;
+        padding: 0 14px;
+      }
+
+      button:hover {
+        background: var(--accent-dark);
+      }
+
+      button.secondary {
+        background: #40566d;
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .form-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .message {
+        border-radius: 6px;
+        display: none;
+        font-size: 13px;
+        margin-top: 12px;
+        padding: 10px;
+      }
+
+      .message.show {
+        display: block;
+      }
+
+      .message.ok {
+        background: #eaf7ef;
+        color: var(--success);
+      }
+
+      .message.error {
+        background: #fff0ee;
+        color: var(--danger);
+      }
+
+      .toolbar {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+      }
+
+      .table-wrap {
+        border-top: 1px solid var(--line);
+        overflow-x: auto;
+      }
+
+      table {
+        border-collapse: collapse;
+        min-width: 900px;
+        width: 100%;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--surface-muted);
+        color: #3b4856;
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .status {
+        border-radius: 999px;
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 8px;
+      }
+
+      .status.pending {
+        background: #fff7db;
+        color: var(--warning);
+      }
+
+      .status.processing {
+        background: #e8f2ff;
+        color: var(--accent-dark);
+      }
+
+      .status.processed {
+        background: #eaf7ef;
+        color: var(--success);
+      }
+
+      .status.failed {
+        background: #fff0ee;
+        color: var(--danger);
+      }
+
+      @media (max-width: 880px) {
+        main {
+          grid-template-columns: 1fr;
+          padding: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>PocketBase Jira Task Sync</h1>
+      <p>Add tasks locally. PocketBase cron creates Jira issues in the background.</p>
+    </header>
+
+    <main>
+      <div class="stack">
+        <section>
+          <h2>Single Task</h2>
+          <form id="taskForm">
+            <label for="title">Title</label>
+            <input id="title" name="title" required maxlength="255" />
+
+            <div class="form-grid">
+              <div>
+                <label for="priority">Priority</label>
+                <select id="priority" name="priority">
+                  <option value="highest">Highest</option>
+                  <option value="high">High</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="low">Low</option>
+                  <option value="lowest">Lowest</option>
+                </select>
+              </div>
+              <div>
+                <label for="task_type">Task Type</label>
+                <select id="task_type" name="task_type">
+                  <option value="Task" selected>Task</option>
+                  <option value="Bug">Bug</option>
+                  <option value="Story">Story</option>
+                </select>
+              </div>
+            </div>
+
+            <label for="description">Description</label>
+            <textarea id="description" name="description"></textarea>
+
+            <div class="actions">
+              <button type="submit">Add Task</button>
+            </div>
+          </form>
+          <div id="singleMessage" class="message"></div>
+        </section>
+
+        <section>
+          <h2>Bulk Upload</h2>
+          <p class="hint">
+            Paste JSON array, JSON object with a tasks array, or CSV with title and description columns.
+          </p>
+          <label for="bulkInput">Bulk Data</label>
+          <textarea id="bulkInput" placeholder='[{"title":"Task one","description":"Details"}]'></textarea>
+          <div class="actions">
+            <button id="bulkSubmit" type="button">Upload Bulk</button>
+            <button id="sampleJson" class="secondary" type="button">Sample JSON</button>
+            <button id="sampleCsv" class="secondary" type="button">Sample CSV</button>
+          </div>
+          <div id="bulkMessage" class="message"></div>
+        </section>
+
+        <section>
+          <h2>Cron Timing</h2>
+          <p class="hint">
+            PocketBase registers cron when it starts. Change this value in .env, then restart PocketBase.
+          </p>
+          <label for="cronPreset">Cron Preset</label>
+          <select id="cronPreset">
+            <option value="*/1 * * * *">Every 1 minute</option>
+            <option value="*/2 * * * *" selected>Every 2 minutes</option>
+            <option value="*/5 * * * *">Every 5 minutes</option>
+          </select>
+          <label for="cronEnvLine">Add to .env</label>
+          <input id="cronEnvLine" readonly value="JIRA_CRON_EXPR=*/2 * * * *" />
+          <div class="actions">
+            <button id="copyCron" type="button">Copy Env Line</button>
+            <button id="runCronNow" class="secondary" type="button">Run Cron Now</button>
+          </div>
+          <div id="cronMessage" class="message"></div>
+        </section>
+      </div>
+
+      <div class="panel">
+        <div class="toolbar">
+          <div>
+            <h2>Tasks</h2>
+            <div class="hint">UI writes only to PocketBase. Jira sync is done by PocketBase cron.</div>
+          </div>
+          <button id="refreshTasks" class="secondary" type="button">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Priority</th>
+                <th>Type</th>
+                <th>Sync</th>
+                <th>Jira</th>
+                <th>Retries</th>
+                <th>Error</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="taskRows">
+              <tr>
+                <td colspan="8">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const API = "/api/collections/tasks/records";
+
+      const taskForm = document.querySelector("#taskForm");
+      const bulkInput = document.querySelector("#bulkInput");
+      const taskRows = document.querySelector("#taskRows");
+      const singleMessage = document.querySelector("#singleMessage");
+      const bulkMessage = document.querySelector("#bulkMessage");
+      const cronMessage = document.querySelector("#cronMessage");
+
+      function showMessage(node, text, type) {
+        node.textContent = text;
+        node.className = `message show ${type}`;
+      }
+
+      function normalizeTask(task) {
+        return {
+          title: String(task.title || "").trim(),
+          description: String(task.description || "").trim(),
+          priority: normalizePriority(task.priority),
+          task_type: normalizeTaskType(task.task_type || task.taskType),
+          jiraIssueId: "",
+          retryCount: 0
+        };
+      }
+
+      function normalizePriority(value) {
+        const allowed = ["highest", "high", "medium", "low", "lowest"];
+        const normalized = String(value || "medium").trim().toLowerCase();
+        return allowed.includes(normalized) ? normalized : "medium";
+      }
+
+      function normalizeTaskType(value) {
+        const normalized = String(value || "Task").trim().toLowerCase();
+        if (normalized === "bug") return "Bug";
+        if (normalized === "story") return "Story";
+        return "Task";
+      }
+
+      async function createTask(task) {
+        const payload = normalizeTask(task);
+
+        if (!payload.title) {
+          throw new Error("Task title is required");
+        }
+
+        const response = await fetch(API, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        return response.json();
+      }
+
+      function parseCsv(text) {
+        const rows = text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => line.split(",").map((cell) => cell.trim()));
+
+        if (rows.length === 0) {
+          return [];
+        }
+
+        const header = rows[0].map((cell) => cell.toLowerCase());
+        const titleIndex = header.indexOf("title");
+        const descriptionIndex = header.indexOf("description");
+        const priorityIndex = header.indexOf("priority");
+        const taskTypeIndex = header.indexOf("task_type") >= 0 ? header.indexOf("task_type") : header.indexOf("tasktype");
+
+        if (titleIndex === -1) {
+          throw new Error("CSV must include a title column");
+        }
+
+        return rows.slice(1).map((row) => ({
+          title: row[titleIndex] || "",
+          description: descriptionIndex >= 0 ? row[descriptionIndex] || "" : "",
+          priority: priorityIndex >= 0 ? row[priorityIndex] || "medium" : "medium",
+          task_type: taskTypeIndex >= 0 ? row[taskTypeIndex] || "Task" : "Task"
+        }));
+      }
+
+      function parseBulk(text) {
+        const trimmed = text.trim();
+
+        if (!trimmed) {
+          return [];
+        }
+
+        if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+          const parsed = JSON.parse(trimmed);
+          return Array.isArray(parsed) ? parsed : parsed.tasks || [];
+        }
+
+        return parseCsv(trimmed);
+      }
+
+      async function loadTasks() {
+        taskRows.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+
+        const response = await fetch(`${API}?sort=-createdAt&perPage=100`);
+
+        if (!response.ok) {
+          taskRows.innerHTML = '<tr><td colspan="8">Failed to load tasks.</td></tr>';
+          return;
+        }
+
+        const data = await response.json();
+        const items = data.items || [];
+
+        if (items.length === 0) {
+          taskRows.innerHTML = '<tr><td colspan="8">No tasks yet.</td></tr>';
+          return;
+        }
+
+        taskRows.innerHTML = items
+          .map((task) => {
+            const sync = getSyncState(task);
+            const jira = task.jiraUrl
+              ? `<a href="${task.jiraUrl}" target="_blank" rel="noreferrer">${task.jiraIssueId}</a>`
+              : task.jiraIssueId || "-";
+            return `
+              <tr>
+                <td><strong>${escapeHtml(task.title || "")}</strong><br><span class="hint">${escapeHtml(task.description || "")}</span></td>
+                <td>${escapeHtml(labelPriority(task.priority))}</td>
+                <td>${escapeHtml(task.task_type || "Task")}</td>
+                <td><span class="status ${escapeHtml(sync.className)}">${escapeHtml(sync.label)}</span></td>
+                <td>${jira}</td>
+                <td>${task.retryCount || 0}</td>
+                <td>${escapeHtml(task.jiraLastError || "")}</td>
+                <td>${escapeHtml(task.createdAt || task.created || "")}</td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+
+      function getSyncState(task) {
+        if (task.jiraIssueId) return { label: "processed", className: "processed" };
+        if (task.jiraLastError === "PROCESSING") return { label: "processing", className: "processing" };
+        if (task.jiraLastError) return { label: "failed", className: "failed" };
+        return { label: "pending", className: "pending" };
+      }
+
+      function labelPriority(value) {
+        const labels = {
+          highest: "Highest",
+          high: "High",
+          medium: "Medium",
+          low: "Low",
+          lowest: "Lowest"
+        };
+        return labels[normalizePriority(value)] || "Medium";
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      taskForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        try {
+          await createTask({
+            title: document.querySelector("#title").value,
+            description: document.querySelector("#description").value,
+            priority: document.querySelector("#priority").value,
+            task_type: document.querySelector("#task_type").value
+          });
+          taskForm.reset();
+          showMessage(singleMessage, "Task added. Cron will sync it to Jira.", "ok");
+          await loadTasks();
+        } catch (error) {
+          showMessage(singleMessage, error.message, "error");
+        }
+      });
+
+      document.querySelector("#bulkSubmit").addEventListener("click", async () => {
+        try {
+          const tasks = parseBulk(bulkInput.value);
+
+          if (!tasks.length) {
+            throw new Error("No tasks found in bulk input");
+          }
+
+          var created = 0;
+          for (const task of tasks) {
+            await createTask(task);
+            created++;
+          }
+
+          showMessage(bulkMessage, `Uploaded ${created} tasks. Cron will sync them to Jira.`, "ok");
+          await loadTasks();
+        } catch (error) {
+          showMessage(bulkMessage, error.message, "error");
+        }
+      });
+
+      document.querySelector("#sampleJson").addEventListener("click", () => {
+        bulkInput.value = JSON.stringify(
+          [
+            { title: "Prepare Jira cron demo", description: "Created from bulk JSON upload.", priority: "medium", task_type: "Task" },
+            { title: "Fix login bug", description: "Cron should create this as a Jira Bug.", priority: "high", task_type: "Bug" }
+          ],
+          null,
+          2
+        );
+      });
+
+      document.querySelector("#sampleCsv").addEventListener("click", () => {
+        bulkInput.value = "title,description,priority,task_type\nCSV task one,Created from CSV upload,medium,Task\nCSV bug,Waiting for cron sync,high,Bug";
+      });
+
+      document.querySelector("#refreshTasks").addEventListener("click", loadTasks);
+
+      document.querySelector("#cronPreset").addEventListener("change", (event) => {
+        document.querySelector("#cronEnvLine").value = `JIRA_CRON_EXPR=${event.target.value}`;
+      });
+
+      document.querySelector("#copyCron").addEventListener("click", async () => {
+        const value = document.querySelector("#cronEnvLine").value;
+        try {
+          await navigator.clipboard.writeText(value);
+          showMessage(cronMessage, "Cron env line copied. Add it to .env and restart PocketBase.", "ok");
+        } catch (_) {
+          showMessage(cronMessage, value, "ok");
+        }
+      });
+
+      document.querySelector("#runCronNow").addEventListener("click", async () => {
+        try {
+          const response = await fetch("/jira-cron/run-once", { method: "POST" });
+          if (!response.ok) throw new Error(await response.text());
+          showMessage(cronMessage, "Cron run triggered.", "ok");
+          await loadTasks();
+        } catch (error) {
+          showMessage(cronMessage, error.message, "error");
+        }
+      });
+
+      loadTasks();
+    </script>
+  </body>
+</html>

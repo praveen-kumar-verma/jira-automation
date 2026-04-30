@@ -1,41 +1,73 @@
-# PocketBase Hooks + Jira Automation
+# PocketBase + Jira Cron Task Sync
 
-This project uses PocketBase server-side hooks as the main automation mechanism. There is no Express trigger in the workflow.
+Local development project that uses PocketBase as the backend, database, hook runtime, static UI server, and cron worker. The browser UI only inserts tasks into PocketBase. Jira is called only from the PocketBase cron job.
 
-When a `tasks` record is created, PocketBase creates one Jira issue. When `priority` changes in PocketBase, PocketBase updates that same Jira issue.
+## Flow
 
-## What Is Included
+```text
+User adds tasks in UI
+  -> PocketBase stores records in tasks collection
+  -> PocketBase cron runs on the configured schedule
+  -> Cron finds unsynced tasks where jiraIssueId is empty
+  -> Cron creates Jira issues
+  -> Cron stores jiraIssueId and jiraUrl
+```
 
-- `pb_hooks/jira.pb.js`
-  - `onRecordAfterCreateSuccess`: creates a Jira issue after a `tasks` record is persisted.
-  - `onRecordAfterUpdateSuccess`: syncs priority changes to the same Jira issue.
-- `scripts/start-pocketbase.ps1`
-  - Loads `.env` into process environment variables and starts PocketBase locally.
+## Project Structure
 
-PocketBase JS hooks run inside PocketBase's embedded JavaScript runtime, so the hook uses PocketBase's `$http.send`.
+```text
+pb_hooks/
+  cron.pb.js        PocketBase-loaded hook entrypoint
+  cron.js           Cron registration and task processing logic
+  jiraService.js    Jira REST API helper
+pb_migrations/
+  202604300001_create_tasks_collection.pb.js
+  202605010001_update_tasks_priority_type_remove_status.pb.js
+frontend/
+  index.html        Single + bulk task UI
+scripts/
+  start-pocketbase.ps1
+.env.example
+README.md
+```
 
-## Environment Variables
+## Environment
 
-PocketBase does not automatically load `.env` files for hooks. Start PocketBase with the provided script.
+Create `.env` in the project root:
 
 ```env
 JIRA_BASE_URL=https://your-domain.atlassian.net
 JIRA_EMAIL=you@example.com
 JIRA_API_TOKEN=your_jira_api_token
 JIRA_PROJECT_KEY=PROJ
+JIRA_CRON_EXPR=*/2 * * * *
 ```
 
-## Run
-1. Install PocketBase
-2. Download PocketBase for Windows.
-3. Extract the zip.
-4. Place pocketbase.exe in the project root folder (same level as pb_hooks, pb_migrations, scripts).
-```powershell
+`JIRA_CRON_EXPR` is optional. If it is missing, the cron runs every 2 minutes.
 
+Common cron options:
+
+```text
+*/1 * * * *  every 1 minute
+*/2 * * * *  every 2 minutes
+*/5 * * * *  every 5 minutes
+```
+
+PocketBase hooks do not automatically load `.env`, so start PocketBase with the provided script.
+
+## Run
+
+```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-pocketbase.ps1
 ```
 
-Dashboard:
+Open the UI:
+
+```text
+http://127.0.0.1:8090
+```
+
+PocketBase dashboard:
 
 ```text
 http://127.0.0.1:8090/_/
@@ -43,62 +75,80 @@ http://127.0.0.1:8090/_/
 
 ## Collection: tasks
 
-Fields:
+The migration creates `tasks` with these fields:
 
-- `title`: mapped to Jira summary
-- `description`: mapped to Jira description
-- `priority`: dropdown: `highest`, `high`, `medium`, `low`, `lowest`
-- `task_type`: dropdown: `Task`, `Bug`, `Story`
-- `jira_issue_key`: hidden internal Jira issue key used by the hook
-- `jira_url`: hidden Jira browse URL populated by the hook after Jira creates the issue
-- `jira_last_error`: hidden last Jira sync error, if any
+- `title`: text, required
+- `description`: text, optional
+- `priority`: dropdown/select, required: `highest`, `high`, `medium`, `low`, `lowest`
+- `task_type`: dropdown/select, required: `Task`, `Bug`, `Story`
+- `jiraIssueId`: text, optional
+- `jiraUrl`: URL, optional
+- `jiraLastError`: text, optional
+- `retryCount`: number, optional
+- `createdAt`: auto date on create
 
-Removed fields:
+There is no `status` field. The UI derives sync state from Jira fields:
 
-- `link_type`
-- `jira_followup_key`
-- visible `jira_key`
-- `status`
-- `issue_type`
+- Pending: `jiraIssueId` is empty and `jiraLastError` is empty
+- Processing: `jiraLastError` is `PROCESSING`
+- Failed: `jiraIssueId` is empty and `jiraLastError` has an error
+- Processed: `jiraIssueId` is filled
 
-## Behavior
+## Cron
 
-### Create
+Registered job:
 
-Creating a PocketBase task:
-
-1. Creates a Jira issue.
-2. Sets Jira priority from `priority`.
-3. Sets Jira issue type from `task_type`.
-4. Stores hidden `jira_issue_key` and hidden `jira_url`.
-
-### Update
-
-Updating an existing PocketBase task:
-
-1. If `priority` changed, the hook updates priority on the same Jira issue.
-2. No follow-up Jira issue is created.
-3. No issue linking is performed.
-
-## Manual Test
-
-### Check Env
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8090/jira-debug/env
+```text
+jira-sync-pending-tasks
 ```
 
-All values should be `set`.
+Default schedule:
 
-### Create Test Jira Issue
+```text
+*/2 * * * *
+```
+
+Cron query:
+
+```text
+jiraIssueId = '' && jiraLastError != 'PROCESSING' && retryCount < 3
+```
+
+Batch size:
+
+```text
+25
+```
+
+## Idempotency
+
+The cron uses these guards to prevent duplicate Jira issues:
+
+1. It only fetches tasks with empty `jiraIssueId`.
+2. Before processing each task, it re-reads the task from PocketBase.
+3. It skips the task if `jiraIssueId` exists.
+4. It writes `jiraLastError = PROCESSING` before calling Jira.
+5. It saves the returned Jira issue key to `jiraIssueId`.
+
+The UI never calls Jira.
+
+## Manual Cron Test
+
+Check cron registration:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8090/jira-cron/status
+```
+
+Run cron once manually:
 
 ```powershell
 Invoke-RestMethod `
-  -Uri http://127.0.0.1:8090/jira-debug/create-test-issue `
+  -Uri http://127.0.0.1:8090/jira-cron/run-once `
   -Method POST
 ```
 
-### Create PocketBase Task
+## Add One Task By API
 
 ```powershell
 Invoke-RestMethod `
@@ -106,54 +156,46 @@ Invoke-RestMethod `
   -Method POST `
   -ContentType "application/json" `
   -Body '{
-    "title": "Create Jira from PocketBase",
-    "description": "Manual PocketBase hook test",
+    "title": "Create Jira issue from cron",
+    "description": "This task should be picked by PocketBase cron.",
     "priority": "medium",
-    "task_type": "Task"
+    "task_type": "Task",
+    "jiraIssueId": "",
+    "retryCount": 0
   }'
 ```
 
-Expected:
+## Jira Payload
 
-- PocketBase record is created.
-- Jira issue is created.
-- hidden `jira_issue_key` and hidden `jira_url` are populated.
-- `jira_last_error` is empty.
+Cron sends:
 
-### Update Priority On Same Jira Issue
-
-```powershell
-Invoke-RestMethod `
-  -Uri http://127.0.0.1:8090/api/collections/tasks/records/RECORD_ID `
-  -Method PATCH `
-  -ContentType "application/json" `
-  -Body '{
-    "priority": "highest"
-  }'
+```json
+{
+  "fields": {
+    "project": { "key": "PROJ" },
+    "summary": "task.title",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [{ "type": "text", "text": "task.description" }]
+        }
+      ]
+    },
+    "issuetype": { "name": "task.task_type" },
+    "priority": { "name": "Medium" },
+    "labels": ["pocketbase", "cron-sync"]
+  }
+}
 ```
-
-Expected:
-
-- No new Jira issue is created.
-- The Jira issue priority changes to `Highest`.
-
-## Jira Workflow Note
-
-Jira issue status is controlled by the Jira workflow and board columns. This PocketBase form does not set status during task creation.
-
-## Error Handling
-
-Jira failures do not block PocketBase record creation. Errors are logged to the PocketBase console and written to `jira_last_error`.
-
-Common causes:
-
-- `401`: invalid email/API token
-- `403`: Jira user lacks project permission
-- `400`: required Jira field missing, invalid task type, or invalid priority
 
 ## Notes
 
-- This uses PocketBase hooks, not Express routes.
-- This does not use cron jobs.
-- This does not use OpenPBS scheduler hooks.
-- This does not require a Node.js server.
+- Do not use Express as the backend.
+- PocketBase is the backend and cron worker.
+- UI inserts records only.
+- Jira sync happens only inside PocketBase hooks.
+- Failed tasks are retried up to 3 times.
+- Cron schedule changes require restarting PocketBase because cron jobs are registered at startup.
